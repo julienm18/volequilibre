@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VOL D'ÉQUILIBRE</title>
+<style>
+  body{margin:0;background:#1e1e2e;color:#fff;font-family:system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh}
+  #fb-wrap{width:100%;max-width:380px;padding:6px;box-sizing:border-box}
+  #fb-game{position:relative;background:#11111b;border:3px solid #6c7086;border-radius:8px;overflow:hidden;line-height:0;outline:none;touch-action:manipulation}
+  #fb-cv{width:100%;height:auto;display:block;cursor:pointer}
+  #fb-ov{position:absolute;inset:0;background:#11111bf2;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:12px;line-height:1.35;overflow:auto;font-size:14px}
+  #fb-ov h2{margin:4px 0;color:#f9e2af;font-size:22px}
+  #fb-ov p{margin:4px 0;max-width:320px}
+  .fb-b{cursor:pointer;margin:5px;padding:10px 18px;border:0;border-radius:8px;background:#89b4fa;color:#11111b;font-weight:700;font-size:15px}
+  .fb-b.r{background:#f38ba8}
+  #fb-hud{margin-top:8px;background:#181825;padding:8px 12px;border-radius:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:14px}
+  #fb-msg{color:#f9e2af;flex:1;min-height:38px;display:flex;align-items:center;line-height:1.25}
+  #fb-st{background:#313244;padding:4px 10px;border-radius:4px;white-space:nowrap;font-weight:700;font-size:13px}
+  #fb-mu{border:0;background:#313244;color:#fff;border-radius:6px;padding:6px 8px;cursor:pointer}
+</style>
+</head>
+<body>
+<div id="fb-wrap">
+  <div id="fb-game" tabindex="0"><canvas id="fb-cv" width="360" height="540"></canvas><div id="fb-ov"></div></div>
+  <div id="fb-hud"><div id="fb-msg">Touche l’écran ou appuie sur Espace pour voler.</div><div id="fb-st">0 pts</div><button id="fb-mu" aria-label="Son">🔊</button></div>
+</div>
+<script>
+(function(){
+var W=360,H=540,GH=46,PW=58,BX=92,R=12,TARGET=20,CODE="6150",$=function(i){return document.getElementById(i)};
+var GOOD=[["💧","Boire de l’eau, faire une pause : ton corps se régule sans produit."],["🏃","Le sport procure du bien-être sans aucun produit."],["😴","Bien dormir protège ton humeur et ta concentration."],["🤝","En parler à un ami de confiance, ça allège."],["📞","Drogues Info Service : 0 800 23 13 13, gratuit et anonyme."],["🎸","Une passion est un super bouclier."]];
+var BAD=[["🚬","Tabac : la nicotine rend vite dépendant."],["🍺","Alcool : interdit aux mineurs, il trouble équilibre et réflexes."],["💨","Vape avec nicotine : risque de dépendance."],["💊","Médicaments détournés : jamais sans avis médical."],["🌿","Cannabis : mémoire et attention touchées, usage interdit."]];
+var CAPS=["🚬","🍺","💊","💨","🌿"];
+var cv=$("fb-cv"),ctx=cv.getContext("2d");
+var st="menu",hard=false,score=0,lives=3,passed=0,P=[],B={y:H/2,vy:0,rot:0},vert=0,inv=0,t=0,scroll=0,pops=[],mu=false,AC,last=0,wing=0,stars=[],bld=[];
+for(var i=0;i<45;i++)stars.push([Math.random()*W,Math.random()*(H-150),Math.random()*1.5+.4]);
+for(var x=0,k=0;x<W+120;k++){var w=26+(k*37%34),h=50+(k*53%90);bld.push([x,w,h]);x+=w+4}
+var BW=bld[bld.length-1][0]+bld[bld.length-1][1]+4;
+
+function bp(f,d,ty){if(mu)return;try{AC=AC||new(window.AudioContext||window.webkitAudioContext)();var o=AC.createOscillator(),g=AC.createGain();o.type=ty||"square";o.frequency.value=f;g.gain.value=.04;o.connect(g);g.connect(AC.destination);o.start();g.gain.exponentialRampToValueAtTime(.001,AC.currentTime+d);o.stop(AC.currentTime+d)}catch(e){}}
+function setMsg(t,c){var m=$("fb-msg");m.textContent=t;m.style.color=c=="g"?"#a6e3a1":c=="b"?"#f38ba8":c=="v"?"#cba6f7":"#f9e2af"}
+function hudUp(){$("fb-st").innerHTML=(score<0?'<span style="color:#f38ba8">'+score+'</span>':score)+" pts · "+"❤️".repeat(Math.max(0,lives))+" · "+passed+"/"+TARGET}
+function pop(x,y,tx,c){pops.push({x:x,y:y,t:tx,c:c,l:1})}
+function spd(){return(hard?178:150)+passed*3.5}
+function cr(cx,cy,rx,ry,rw,rh){var nx=Math.max(rx,Math.min(cx,rx+rw)),ny=Math.max(ry,Math.min(cy,ry+rh));return(cx-nx)*(cx-nx)+(cy-ny)*(cy-ny)<(R-1)*(R-1)}
+function spawn(x){var gap=Math.max(110,(hard?136:158)-passed*1.3),lo=48+gap/2,hi=H-GH-48-gap/2,gy=lo+Math.random()*(hi-lo),
+  p={x:x,gy:gy,gap:gap,pass:false,cap:CAPS[Math.floor(Math.random()*CAPS.length)],it:null};
+  if(Math.random()<.72){var g=Math.random()<.55,L=g?GOOD:BAD,a=L[Math.floor(Math.random()*L.length)];p.it={g:g,e:a[0],m:a[1],dy:(Math.random()-.5)*gap*.5,got:false}}
+  P.push(p)}
+function init(h){hard=h;score=0;lives=3;passed=0;P=[];pops=[];vert=0;inv=0;B={y:H/2,vy:0,rot:0};spawn(W+40);st="ready";
+  setMsg("Touche l’écran ou appuie sur Espace pour voler. Passe entre les colonnes !","");hudUp();$("fb-ov").style.display="none";$("fb-game").focus()}
+function flap(){if(st=="ready")st="play";if(st!="play")return;B.vy=vert>0?-360:-430;wing=.18;bp(vert>0?260:420,.07)}
+function hit(why){lives--;score-=50;bp(110,.45,"sawtooth");pop(BX,B.y-20,"−50","#f38ba8");
+  setMsg(why,"b");hudUp();if(lives<=0){end(false);return}
+  inv=1.6;vert=0;var g=null;for(var i=0;i<P.length;i++)if(P[i].x+PW>BX-R-4){g=P[i];break}
+  B.y=g?g.gy:H/2;B.vy=0}
+function update(dt){t+=dt;wing=Math.max(0,wing-dt);
+  for(var i=pops.length-1;i>=0;i--){pops[i].l-=dt;pops[i].y-=22*dt;if(pops[i].l<=0)pops.splice(i,1)}
+  if(st=="ready"){B.y=H/2+Math.sin(t*4)*6;return}
+  var v=spd();scroll+=v*dt;
+  B.vy=Math.min(620,B.vy+(vert>0?2100:1500)*dt);B.y+=B.vy*dt;B.rot=Math.max(-.5,Math.min(1.1,B.vy/500));
+  if(vert>0)vert-=dt;if(inv>0)inv-=dt;
+  P.forEach(function(p){p.x-=v*dt});
+  if(P[P.length-1].x<=W+10-190)spawn(W+10);
+  if(P[0].x<-PW-10)P.shift();
+  if(B.y<R){B.y=R;B.vy=0}
+  if(B.y>H-GH-R){if(inv>0){B.y=H-GH-R;B.vy=-320}else{hit("💥 Tu as touché le sol ! Un vol d’équilibre se rattrape (−50).");return}}
+  for(var i=0;i<P.length;i++){var p=P[i],top=p.gy-p.gap/2,bot=p.gy+p.gap/2;
+    if(inv<=0&&(cr(BX,B.y,p.x,0,PW,top)||cr(BX,B.y,p.x,bot,PW,H-GH-bot))){hit("💥 Collision avec une colonne de risques (−50). Reprends ton équilibre !");return}
+    if(p.it&&!p.it.got){var ix=p.x+PW/2,iy=p.gy+p.it.dy;
+      if(Math.hypot(BX-ix,B.y-iy)<R+11){p.it.got=true;
+        if(p.it.g){score+=50;pop(ix,iy-10,"+50","#a6e3a1");setMsg("✅ "+p.it.e+" "+p.it.m+(vert>0?" Vertige dissipé !":""),"g");vert=0;bp(700,.1);bp(990,.15)}
+        else{score-=30;vert=hard?6:5;pop(ix,iy-10,"−30","#f38ba8");setMsg("🌀 "+p.it.e+" "+p.it.m+" Vertige : gravité instable !","v");bp(150,.35,"sawtooth")}
+        hudUp()}}
+    if(!p.pass&&p.x+PW<BX-R){p.pass=true;passed++;score+=10;pop(BX,B.y-22,"+10","#f9e2af");bp(560,.05);hudUp();if(passed>=TARGET){end(true);return}}}}
+function end(win){st="over";var b=0;if(win){b=Math.max(0,lives)*50;score+=b;bp(523,.15);bp(659,.15);bp(784,.3)}
+  hudUp();var rk=score<0?"En danger":score<250?"Apprenti":score<500?"Éclaireur":"Gardien de l’équilibre",o=$("fb-ov");o.style.display="flex";
+  o.innerHTML='<h2>'+(win?"🏆 Mission réussie !":"💥 Partie terminée")+'</h2><p style="font-size:30px;font-weight:700;color:'+(score<0?"#f38ba8":"#a6e3a1")+'">'+score+' pts</p><p>Rang : <b>'+rk+'</b>'+(win?'<br>Bonus vies : +'+b+' pts':'<br>Colonnes passées : '+passed+'/'+TARGET)+'</p>'+(win?'<p>🔑 Code de sortie : <b style="font-size:24px;letter-spacing:4px">'+CODE+'</b></p>':'<p>Retente ta chance : chaque essai t’entraîne !</p>')+'<p style="font-size:12px;color:#a6adc8">📞 Drogues Info Service : <b>0 800 23 13 13</b> (gratuit, anonyme) · Urgence : <b>15</b> ou <b>112</b></p><button class="fb-b" id="fb-rp">↻ Rejouer</button>';
+  $("fb-rp").onclick=menu}
+function menu(){st="menu";var o=$("fb-ov");o.style.display="flex";
+  o.innerHTML='<h2>🐦 VOL D’ÉQUILIBRE</h2><p>Aide <b>Zef</b>, le petit oiseau, à traverser les colonnes de risques (🚬🍺💊💨🌿). Touche pour battre des ailes.</p><p>🌿💊 flottants = <b>pièges</b> : −30 et <b>vertige</b> (gravité instable quelques secondes).<br>💧🏃😴🤝📞🎸 = <b>bons réflexes</b> : +50 et vertige dissipé.</p><p style="color:#a6adc8">Passe <b>'+TARGET+' colonnes</b> avec 3 ❤️. Clic, toucher ou Espace.</p><button class="fb-b" id="fb-n">▶ Normal</button><button class="fb-b r" id="fb-h">🔥 Difficile</button>';
+  $("fb-n").onclick=function(){init(false)};$("fb-h").onclick=function(){init(true)}}
+
+function bird(){ctx.save();ctx.translate(BX,B.y);ctx.rotate(B.rot);
+  if(inv>0&&Math.floor(t*14)%2)ctx.globalAlpha=.4;
+  ctx.fillStyle=vert>0?"#cba6f7":"#89dceb";ctx.beginPath();ctx.arc(0,0,R+2,0,7);ctx.fill();
+  ctx.fillStyle="#cdd6f4";ctx.beginPath();ctx.ellipse(2,5,8,6,0,0,7);ctx.fill();
+  ctx.fillStyle=vert>0?"#b4befe":"#74c7ec";ctx.beginPath();ctx.moveTo(-14,-2);ctx.lineTo(-22,wing>0?-10:2);ctx.lineTo(-14,6);ctx.fill();
+  ctx.beginPath();ctx.ellipse(-3,wing>0?-4:3,8,wing>0?4:6,-.3,0,7);ctx.fill();
+  ctx.fillStyle="#fff";ctx.beginPath();ctx.arc(6,-5,5,0,7);ctx.fill();
+  ctx.fillStyle="#11111b";ctx.beginPath();ctx.arc(vert>0?6+Math.cos(t*20)*2:8,vert>0?-5+Math.sin(t*20)*2:-5,2.2,0,7);ctx.fill();
+  ctx.fillStyle="#fab387";ctx.beginPath();ctx.moveTo(12,-1);ctx.lineTo(21,2);ctx.lineTo(12,6);ctx.fill();
+  ctx.restore();if(vert>0){ctx.font="14px serif";ctx.textAlign="center";ctx.fillText("💫",BX,B.y-24)}}
+function column(x,y,h,capY,cap){var g=ctx.createLinearGradient(x,0,x+PW,0);g.addColorStop(0,"#1e2352");g.addColorStop(.5,"#3a4390");g.addColorStop(1,"#1e2352");
+  ctx.fillStyle=g;ctx.fillRect(x,y,PW,h);ctx.strokeStyle="#89b4fa";ctx.lineWidth=2;ctx.strokeRect(x,y,PW,h);
+  ctx.fillStyle="#2a1a3d";ctx.fillRect(x-4,capY,PW+8,22);ctx.strokeStyle="#f38ba8";ctx.strokeRect(x-4,capY,PW+8,22);
+  ctx.font="15px serif";ctx.textAlign="center";ctx.textBaseline="middle";ctx.fillText(cap,x+PW/2,capY+12)}
+function draw(){ctx.save();
+  if(vert>0)ctx.translate((Math.random()-.5)*3,(Math.random()-.5)*3);
+  var g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,"#1e1e2e");g.addColorStop(.6,"#2d1b4e");g.addColorStop(1,"#5b2a86");ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  ctx.fillStyle="#cdd6f4";stars.forEach(function(s){ctx.globalAlpha=.4+.4*Math.sin(t*2+s[0]);ctx.fillRect(s[0],s[1],s[2],s[2])});ctx.globalAlpha=1;
+  var off=(scroll*.25)%BW;ctx.fillStyle="#181530";
+  for(var r=-1;r<=1;r++)bld.forEach(function(b){ctx.fillRect(b[0]-off+r*BW,H-GH-b[2],b[1],b[2])});
+  ctx.textBaseline="middle";
+  P.forEach(function(p){var top=p.gy-p.gap/2,bot=p.gy+p.gap/2;
+    column(p.x,0,top-22,top-22,p.cap);column(p.x,bot+22,H-GH-bot-22,bot,p.cap);
+    if(p.it&&!p.it.got){var ix=p.x+PW/2,iy=p.gy+p.it.dy,col=p.it.g?"#a6e3a1":"#f38ba8";
+      ctx.save();ctx.strokeStyle=col;ctx.lineWidth=2;ctx.shadowColor=col;ctx.shadowBlur=10+4*Math.sin(t*5);ctx.beginPath();ctx.arc(ix,iy,13,0,7);ctx.stroke();ctx.restore();
+      ctx.font="17px serif";ctx.textAlign="center";ctx.fillText(p.it.e,ix,iy+1)}});
+  ctx.fillStyle="#181825";ctx.fillRect(0,H-GH,W,GH);ctx.fillStyle="#313244";
+  for(var x=-((scroll)%40);x<W;x+=40)ctx.fillRect(x,H-GH,20,8);
+  ctx.fillStyle="#89b4fa";ctx.fillRect(0,H-GH,W,2);
+  bird();
+  if(vert>0){ctx.fillStyle="rgba(203,166,247,"+(.12+.08*Math.sin(t*10))+")";ctx.fillRect(0,0,W,H);
+    ctx.fillStyle="#313244";ctx.fillRect(60,8,W-120,10);ctx.fillStyle="#cba6f7";ctx.fillRect(60,8,(W-120)*Math.max(0,vert)/(hard?6:5),10);
+    ctx.font="bold 11px sans-serif";ctx.textAlign="center";ctx.fillStyle="#fff";ctx.fillText("🌀 VERTIGE",W/2,32)}
+  ctx.font="bold 13px sans-serif";ctx.textAlign="center";pops.forEach(function(p){ctx.globalAlpha=Math.max(0,p.l);ctx.fillStyle=p.c;ctx.fillText(p.t,p.x,p.y);ctx.globalAlpha=1});
+  if(st=="ready"){ctx.font="bold 20px sans-serif";ctx.fillStyle="#f9e2af";ctx.fillText("TOUCHE POUR VOLER",W/2,H/2-60)}
+  if(st=="play"||st=="ready"){ctx.font="bold 40px sans-serif";ctx.fillStyle="rgba(255,255,255,.85)";ctx.fillText(passed,W/2,80)}
+  ctx.restore()}
+function loop(ts){var dt=Math.min(.05,(ts-last)/1000||0);last=ts;if(st=="play"||st=="ready")update(dt);else t+=dt;draw();requestAnimationFrame(loop)}
+
+addEventListener("keydown",function(e){if(e.key==" "||e.key=="ArrowUp"||e.key=="w"||e.key=="z"||e.code=="Space"){e.preventDefault();if(!e.repeat)flap()}});
+cv.addEventListener("pointerdown",function(e){e.preventDefault();flap()});
+$("fb-mu").onclick=function(){mu=!mu;this.textContent=mu?"🔇":"🔊"};
+$("fb-game").addEventListener("click",function(){this.focus()});
+menu();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
